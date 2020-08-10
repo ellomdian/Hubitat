@@ -1,10 +1,10 @@
 /**
  *
- *  Enerwave RSM2-Plus
+ *  Enerwave RSM2-PlusDev
  *   
- *	github: Eric Maycock (erocm123)
- *	Date: 2017-06-16
- *	Copyright Eric Maycock
+ *	
+ *	Date: 2020-08-10
+ *	Copyright Josh Ulmer (original code by Eric Maycock)
  *
  *  Includes all configuration parameters and ease of advanced configuration. 
  *
@@ -17,11 +17,11 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- *  2017-06-16: Added support for firmware 5.11 in this handler.
+ *  
  */
  
 metadata {
-   definition (name: "Enerwave RSM2-Plus", namespace: "erocm123", author: "Eric Maycock") {
+   definition (name: "Enerwave RSM2-PlusDev", namespace: "joshu", author: "Josh Ulmer") {
       capability "Actuator"
       capability "Sensor"
       capability "Switch"
@@ -31,8 +31,8 @@ metadata {
       capability "Health Check"
 	   
       command "childOn"
-        command "childOff"
-        command "childRefresh"
+      command "childOff"
+      command "childRefresh"
 
       
       fingerprint mfr: "011A", prod: "0111", model: "0605", deviceJoinName: "Enerwave RSM2-Plus"
@@ -247,11 +247,16 @@ def childOff(String dni) {
 
 def childRefresh(String dni) {
     logging("childRefresh($dni)", 1)
-	def cmds = []
-    cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinaryGet(), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-    cmds << new hubitat.device.HubAction(command(encap(zwave.meterV2.meterGet(scale: 0), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-    cmds << new hubitat.device.HubAction(command(encap(zwave.meterV2.meterGet(scale: 2), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-	cmds
+    if (!childDevices) {
+		createChildDevices()
+	}
+    else{
+    	def cmds = []
+        cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinaryGet(), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
+        cmds << new hubitat.device.HubAction(command(encap(zwave.meterV2.meterGet(scale: 0), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
+        cmds << new hubitat.device.HubAction(command(encap(zwave.meterV2.meterGet(scale: 2), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
+	    cmds
+    }
 }
 
 def poll() {
@@ -567,7 +572,7 @@ private void createChildDevices() {
 	state.oldLabel = device.label
      try {
         for (i in 1..2) {
-	       addChildDevice("Switch Child Device", "${device.deviceNetworkId}-ep${i}", 
+	       addChildDevice("Dev Switch Child Device", "${device.deviceNetworkId}-ep${i}", 
 		      [completedSetup: true, label: "${device.displayName} (R${i})",
 		      isComponent: false, componentName: "ep$i", componentLabel: "Relay $i"])
         }
@@ -578,7 +583,7 @@ private void createChildDevices() {
 
 private sendAlert() {
    sendEvent(
-      descriptionText: "Child device creation failed. Please make sure that the \"Switch Child Device\" is installed and published.",
+      descriptionText: "Child device creation failed. Please make sure that the \"Dev Switch Child Device\" is installed and published.",
 	  eventType: "ALERT",
 	  name: "childDeviceCreation",
 	  value: "failed",
