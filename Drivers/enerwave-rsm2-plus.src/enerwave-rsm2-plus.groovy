@@ -572,7 +572,7 @@ private void createChildDevices() {
 	state.oldLabel = device.label
      try {
         for (i in 1..2) {
-	       addChildDevice("Dev Switch Child Device", "${device.deviceNetworkId}-ep${i}", 
+	       addChildDevice("SwitchChildDeviceDev", "${device.deviceNetworkId}-ep${i}", 
 		      [completedSetup: true, label: "${device.displayName} (R${i})",
 		      isComponent: false, componentName: "ep$i", componentLabel: "Relay $i"])
         }
