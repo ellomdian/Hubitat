@@ -106,43 +106,54 @@ def zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd, ep=null)
 
 def zwaveEvent(hubitat.zwave.commands.basicv1.BasicSet cmd) {
     logging("BasicSet ${cmd}", 2)
-	def result = createEvent(name: "switch", value: cmd.value ? "on" : "off", type: "digital")
+	
     def cmds = []
+    def result = createEvent(name: "switch1", value: cmd.value ? "on" : "off", type: "digital")
+    
     cmds << encap(zwave.switchBinaryV1.switchBinaryGet(), 1)
+    
+    def result2 = createEvent(name: "switch2", value: cmd.value ? "on" : "off", type: "digital")
     cmds << encap(zwave.switchBinaryV1.switchBinaryGet(), 2)
-    return [result, response(commands(cmds))] // returns the result of reponse()
+    
+    return [result, result2, response(commands(cmds))] // returns the result of reponse()
+    
 }
 
-def zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd, ep=null)
+/* Broken Binary Report call, state logic moved to child on/off (thanks drostocil!)
+
+ def zwaveEvent(hubitat.zwave.commands.switchbinaryv1.SwitchBinaryReport cmd)
 {
     logging("SwitchBinaryReport ${cmd} - ep ${ep}", 2)
     if (ep) {
         def event
         def childDevice = childDevices.find{it.deviceNetworkId == "$device.deviceNetworkId-ep$ep"}
         if (childDevice)
-            childDevice.sendEvent(name: "switch", value: cmd.value ? "on" : "off")
+            childDevice.sendEvent(name: "switch${ep}", value: cmd.value ? "on" : "off")
         if (cmd.value) {
-            event = [createEvent([name: "switch", value: "on"])]
+            event = [createEvent([name: "switch${ep}", value: "on"])]
         } else {
             def allOff = true
             childDevices.each { n ->
-               if (n.currentState("switch").value != "off") allOff = false
+               if (n.currentState("switch${ep}").value != "off") allOff = false
             }
             if (allOff) {
-               event = [createEvent([name: "switch", value: "off"])]
+               event = [createEvent([name: "switch${ep}", value: "off"])]
             } else {
-               event = [createEvent([name: "switch", value: "on"])]
+               event = [createEvent([name: "switch${ep}", value: "on"])]
             }
         }
         return event
     } else {
-        def result = createEvent(name: "switch", value: cmd.value ? "on" : "off", type: "digital")
+        def result = createEvent(name: "switch1", value: cmd.value ? "0n" : "0ff", type: "digital")
         def cmds = []
         cmds << encap(zwave.switchBinaryV1.switchBinaryGet(), 1)
+        
+        def result2 = createEvent(name: "switch2", value: cmd.value ? "0n" : "0ff", type: "digital")
+        
         cmds << encap(zwave.switchBinaryV1.switchBinaryGet(), 2)
-        return [result, response(commands(cmds))] // returns the result of reponse()
+        return [result, result2, response(commands(cmds))] // returns the result of reponse()
     }
-}
+} */
 
 private getCommandClassVersions() {
 	[
@@ -157,7 +168,7 @@ private getCommandClassVersions() {
     ]
 }
 
-def zwaveEvent(hubitat.zwave.commands.multichannelv3.MultiChannelCmdEncap cmd) {
+def zwaveEvent(hubitat.zwave.commands.multichannelv4.MultiChannelCmdEncap cmd) {
    logging("MultiChannelCmdEncap ${cmd}", 2)
    def encapsulatedCommand = cmd.encapsulatedCommand(commandClassVersions)
    if (encapsulatedCommand) {
@@ -222,18 +233,40 @@ def off() {
 
 def childOn(String dni) {
     logging("childOn($dni)", 1)
+
+    ep = channelNumber(dni)
+
     def cmds = []
     cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinarySet(switchValue: 0xFF), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
     cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinaryGet(), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-	cmds
+
+    def childDevice = childDevices.find{it.deviceNetworkId == "$device.deviceNetworkId-ep$ep"}
+
+    if (childDevice)
+       childDevice.sendEvent(name: "switch", value: "on")
+
+    cmds << createEvent([name: "switch", value: "on"])
+
+    cmds
 }
 
 def childOff(String dni) {
     logging("childOff($dni)", 1)
-	def cmds = []
-    cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinarySet(switchValue: 0x00), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-    cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinaryGet(), channelNumber(dni))), hubitat.device.Protocol.ZWAVE)
-	cmds
+
+    ep = channelNumber(dni)
+
+    def cmds = []
+    cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinarySet(switchValue: 0x00), ep)), hubitat.device.Protocol.ZWAVE)
+    cmds << new hubitat.device.HubAction(command(encap(zwave.switchBinaryV1.switchBinaryGet(), ep)), hubitat.device.Protocol.ZWAVE)
+
+    def childDevice = childDevices.find{it.deviceNetworkId == "$device.deviceNetworkId-ep$ep"}
+
+    if (childDevice)
+        childDevice.sendEvent(name: "switch", value: "off")
+
+    cmds << createEvent([name: "switch", value: "on"])
+
+    cmds
 }
 
 def childRefresh(String dni) {
@@ -392,36 +425,29 @@ def update_needed_settings()
     def isUpdateNeeded = "NO"
     
     cmds << zwave.versionV1.versionGet()
+  
+    logging("Setting association group 2", 1)
+    cmds << zwave.associationV2.associationRemove(groupingIdentifier: 2, nodeId: [])
+    cmds << zwave.associationV2.associationGet(groupingIdentifier:2)
     
-    if (state.fw == "5.12") {
-       if(state.association2){
-           logging("Setting association group 2", 1)
-           cmds << zwave.associationV2.associationRemove(groupingIdentifier: 2, nodeId: [])
-           cmds << zwave.associationV2.associationGet(groupingIdentifier:2)
-        }
-        if(state.association3){
-           logging("Setting association group 3", 1)
-           cmds << zwave.associationV2.associationRemove(groupingIdentifier: 3, nodeId: [])
-           cmds << zwave.associationV2.associationGet(groupingIdentifier:3)
-        }
-        if(!state.associationMC1) {
-           logging("Adding MultiChannel association group 1", 1)
-           cmds << zwave.associationV2.associationRemove(groupingIdentifier: 1, nodeId: [])
-           cmds << zwave.multiChannelAssociationV2.multiChannelAssociationSet(groupingIdentifier: 1, nodeId: [0,zwaveHubNodeId,0])
-           cmds << zwave.multiChannelAssociationV2.multiChannelAssociationGet(groupingIdentifier: 1)
-        }
-    } else {           
-       if(!state.association2){
-          logging("Setting association group 2", 1)
-          cmds << zwave.associationV2.associationSet(groupingIdentifier:2, nodeId:zwaveHubNodeId)
-          cmds << zwave.associationV2.associationGet(groupingIdentifier:2)
-       }
-       if(!state.association3){
-          logging("Setting association group 3", 1)
-          cmds << zwave.associationV2.associationSet(groupingIdentifier:3, nodeId:zwaveHubNodeId)
-          cmds << zwave.associationV2.associationGet(groupingIdentifier:3)
-       }
-    }
+    logging("Setting association group 3", 1)
+    cmds << zwave.associationV2.associationRemove(groupingIdentifier: 3, nodeId: [])
+    cmds << zwave.associationV2.associationGet(groupingIdentifier:3)
+
+    logging("Adding MultiChannel association group 1", 1)
+    cmds << zwave.associationV2.associationRemove(groupingIdentifier: 1, nodeId: [])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationSet(groupingIdentifier: 1, nodeId: [0,zwaveHubNodeId,0])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationGet(groupingIdentifier: 1)
+    
+    logging("Adding MultiChannel association group 2", 1)
+    cmds << zwave.associationV2.associationRemove(groupingIdentifier: 2, nodeId: [])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationSet(groupingIdentifier: 1, nodeId: [0,zwaveHubNodeId,0])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationGet(groupingIdentifier: 1)
+
+    logging("Adding MultiChannel association group 3", 1)
+    cmds << zwave.associationV2.associationRemove(groupingIdentifier: 3, nodeId: [])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationSet(groupingIdentifier: 1, nodeId: [0,zwaveHubNodeId,0])
+    cmds << zwave.multiChannelAssociationV4.multiChannelAssociationGet(groupingIdentifier: 1)
     
     configuration.Value.each
     {     
@@ -537,7 +563,7 @@ def zwaveEvent(hubitat.zwave.commands.configurationv2.ConfigurationReport cmd) {
 
 private encap(cmd, endpoint) {
 	if (endpoint) {
-		zwave.multiChannelV3.multiChannelCmdEncap(destinationEndPoint:endpoint).encapsulate(cmd)
+		zwave.multiChannelV4.multiChannelCmdEncap(destinationEndPoint:endpoint).encapsulate(cmd)
 	} else {
 		cmd
 	}
